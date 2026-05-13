@@ -1,0 +1,144 @@
+# https://github.com/open-telemetry/opentelemetry-helm-charts/blob/main/charts/opentelemetry-collector/README.md
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: opentelemetry-collector
+  namespace: kube-system
+spec:
+  repo: https://open-telemetry.github.io/opentelemetry-helm-charts
+  chart: opentelemetry-collector
+  targetNamespace: monitoring
+  createNamespace: true   
+  valuesContent: |-
+    mode: "deployment"
+    image:
+      repository: "otel/opentelemetry-collector-k8s"
+    command:
+      name: "otelcol-k8s"
+
+    presets:
+      logsCollection:
+        enabled: false
+        includeCollectorLogs: false
+    config:
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: ${env:MY_POD_IP}:4319
+            http:
+              endpoint: ${env:MY_POD_IP}:4320
+              logs_url_path: /v2/logs
+              traces_url_path: /v2/traces
+        fluentforward:
+          endpoint: 0.0.0.0:8007
+      extensions:
+        health_check: {}
+      processors:
+        batch:
+          send_batch_size: 10000
+        batch/2:
+          send_batch_size: 1000
+        attributes:
+          actions:
+            - action: insert
+              key: otel.access.visibility
+              value: ""
+            - action: insert
+              key: loki.resource.labels
+              value: component,ring,stamp,service.name,otel.access.type,k8s.cluster.name,k8s.namespace.name
+            - action: insert
+              key: loki.attribute.labels
+              value: otel.access.visibility
+        filter:
+          logs:
+            log_record: []
+      exporters:
+        otlp/grafana:
+          endpoint: tempo.monitoring.svc.cluster.local:4317
+          # 4318 is for http
+          tls:
+            insecure: true          
+      service:
+        extensions: [ health_check ]
+        pipelines:
+          # logs:
+          #   receivers: [otlp]
+          #   processors: [memory_limiter, batch, attributes, resource, filter] 
+          #   exporters: [loki]
+          metrics: null
+          traces:
+            receivers: [otlp]
+            processors: [memory_limiter, batch, attributes]
+            exporters: [otlp/grafana]
+    
+    tolerations:
+      - operator: Exists
+        effect: NoSchedule
+    
+    podAnnotations:
+      "secret.reloader.stakater.com/reload": otel-secrets
+    
+    service:
+      enabled: true
+      type: LoadBalancer
+    
+    ports:
+      otlp:
+        enabled: true
+        containerPort: 4319
+        servicePort: 4319
+        hostPort: 4319
+        protocol: TCP
+      otlp-http:
+        enabled: true
+        containerPort: 4320
+        servicePort: 4320
+        hostPort: 4320
+        protocol: TCP
+      fluent-bit:
+        enabled: false
+        containerPort: 8007
+        servicePort: 8007
+        hostPort: 8007
+        protocol: TCP
+      jaeger-compact:
+        enabled: false
+      jaeger-thrift:
+        enabled: false
+      jaeger-grpc:
+        enabled: false
+      zipkin:
+        enabled: false
+    
+    podMonitor:
+      enabled: true
+      extraLabels:
+        release: prometheus-stack
+    
+    serviceMonitor:
+      enabled: true
+      interval: 60s
+      extraLabels:
+        release: prometheus-stack
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: opentelemetry-collector
+  namespace: monitoring
+  annotations:
+    ingress.kubernetes.io/ssl-redirect: "false"          
+spec:
+  ingressClassName: traefik
+  rules:
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: opentelemetry-collector
+            port:
+              number: 4320

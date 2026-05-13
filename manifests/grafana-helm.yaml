@@ -1,0 +1,194 @@
+# LOKI
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: loki
+  namespace: kube-system
+spec:
+  repo: https://grafana.github.io/helm-charts
+  chart: loki
+  targetNamespace: monitoring
+  createNamespace: true  
+  valuesContent: |-
+    deploymentMode: SingleBinary
+    loki:
+      auth_enabled: false
+      commonConfig:
+        replication_factor: 1
+      storage:
+        type: 'filesystem'        
+      schemaConfig:
+        configs:
+          - from: 2024-04-01
+            store: tsdb
+            object_store: filesystem
+            schema: v13
+            index:
+              prefix: loki_index_
+              period: 24h
+      ingester:
+        chunk_encoding: snappy
+      tracing:
+        enabled: true
+      querier:
+        max_concurrent: 2
+    gateway:
+      enabled: true
+      service:
+        port: 3100
+        type: LoadBalancer
+      ingress:
+        enabled: true
+        ingressClassName: "traefik"
+        tls: false
+        hosts:
+          - host: localhost
+            paths:
+              - path: /
+                pathType: Prefix        
+
+    singleBinary:
+      replicas: 1
+      resources:
+        limits:
+          cpu: 3
+          memory: 2Gi
+        requests:
+          cpu: 2
+          memory: 2Gi
+      extraEnv:
+        # Keep a little bit lower than memory limits
+        - name: GOMEMLIMIT
+          value: 1750MiB   
+    chunksCache:
+      # default is 500MB, with limited memory keep this smaller
+      writebackSizeLimit: 10MB  
+    test:
+      enabled: false      
+    lokiCanary:
+      enabled: false      
+    memberlist:
+      service:
+        publishNotReadyAddresses: true
+    # Zero out replica counts of other deployment modes
+    backend:
+      replicas: 0
+    read:
+      replicas: 0
+    write:
+      replicas: 0
+    ingester:
+      replicas: 0
+    querier:
+      replicas: 0
+    queryFrontend:
+      replicas: 0
+    queryScheduler:
+      replicas: 0
+    distributor:
+      replicas: 0
+    compactor:
+      replicas: 0
+    indexGateway:
+      replicas: 0
+      joinMemberlist: false
+    bloomCompactor:
+      replicas: 0
+    bloomGateway:
+      replicas: 0
+
+# Tempo
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: tempo
+  namespace: kube-system
+spec:
+  repo: https://grafana.github.io/helm-charts
+  chart: tempo
+  targetNamespace: monitoring
+  createNamespace: true  
+  valuesContent: |-
+    tempo:
+      reportingEnabled: false
+
+# GRAFANA
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: grafana
+  namespace: kube-system
+spec:
+  repo: https://grafana.github.io/helm-charts
+  chart: grafana
+  targetNamespace: monitoring
+  createNamespace: true  
+  valuesContent: |-
+    adminUser: admin
+    adminPassword: password 
+
+    service:
+      port: 3000
+      type: LoadBalancer
+    ingress:
+      enabled: false
+    metrics:
+      enabled: true
+
+    # grafana.ini:
+    #   auth:
+    #     disable_login: true
+    
+    #   users:
+    #     allow_sign_up: false
+    #     auto_assign_org_id: 1
+    #     auto_assign_org_role: Admin
+
+    #   auth.anonymous:
+    #     enabled: true
+    #     org_role: Admin
+
+    #   security:
+    #     cookie_secure: false
+    #     cookie_samesite: none
+
+    datasources:
+        datasources.yaml:
+          apiVersion: 1
+          datasources:
+            - name: Loki
+              uid: loki
+              type: loki
+              url: http://loki-gateway.monitoring.svc.cluster.local:3100
+              isDefault: false
+              jsonData:
+                    maxLines: 1000
+                    derivedFields:
+                      - datasourceUid: tempo
+                        matcherRegex: 'traceid'
+                        matcherType: 'label'
+                        name: TraceID
+                        url: '$${__value.raw}'
+                        urlDisplayLabel: 'View Trace'
+            - name: Prometheus
+              uid: prom
+              type: prometheus
+              url: http://prometheus-operated.monitoring.svc.cluster.local:9090
+              isDefault: true
+            - name: Tempo
+              uid: tempo
+              type: tempo
+              url: http://tempo.monitoring.svc.cluster.local:3100
+              isDefault: false
+              jsonData:
+                tracesToLogsV2:
+                  datasourceUid: loki
+                lokiSearch:
+                  datasourceUid: loki
+                tracesToMetrics:
+                  datasourceUid: prom
+                serviceMap:
+                  datasourceUid: prom   

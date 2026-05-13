@@ -1,0 +1,66 @@
+# ConstraintTemplate: requires a specific annotation key to exist with an exact value.
+#
+# Two failure conditions:
+#   1. The annotation key is missing.
+#   2. The annotation key is present but its value does not match `annotationValue`.
+---
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8srequiredannotationvalue
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sRequiredAnnotationValue
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            annotationKey:
+              type: string
+              description: "Exact annotation key that must be present."
+            annotationValue:
+              type: string
+              description: "Required value for the annotation key."
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8srequiredannotationvalue
+
+        annotations := object.get(input.review.object.metadata, "annotations", {})
+
+        violation[{"msg": msg}] {
+          required_key := input.parameters.annotationKey
+          not annotations[required_key]
+          msg := sprintf("annotation %q is required but was not found", [required_key])
+        }
+
+        violation[{"msg": msg}] {
+          required_key := input.parameters.annotationKey
+          required_value := input.parameters.annotationValue
+          actual := annotations[required_key]
+          actual != required_value
+          msg := sprintf("annotation %q must equal %q, got %q", [required_key, required_value, actual])
+        }
+---
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sRequiredAnnotationValue
+metadata:
+  name: require-policy-testing-annotation
+spec:
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+    # Exclude system / infrastructure namespaces so the cluster can bootstrap.
+    excludedNamespaces:
+      - kube-system
+      - kube-public
+      - kube-node-lease
+      - gatekeeper-system
+      - monitoring
+      - default
+  parameters:
+    annotationKey: "my.test.policy-testing"
+    annotationValue: "mytest:value"

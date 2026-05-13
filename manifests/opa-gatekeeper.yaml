@@ -1,0 +1,10 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: gatekeeper
+  namespace: kube-system
+spec:
+  repo: https://open-policy-agent.github.io/gatekeeper/charts
+  chart: gatekeeper
+  targetNamespace: gatekeeper-system
+  createNamespace: true  
