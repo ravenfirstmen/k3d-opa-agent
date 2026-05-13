@@ -1,3 +1,4 @@
+---
 apiVersion: helm.cattle.io/v1
 kind: HelmChart
 metadata:
@@ -8,3 +9,211 @@ spec:
   chart: gatekeeper
   targetNamespace: gatekeeper-system
   createNamespace: true  
+---
+# Scrapes Gatekeeper metrics from both controller-manager and audit pods
+# on port 8888 (named `metrics`). PodMonitor is used instead of ServiceMonitor
+# because the audit pod does not have a dedicated Service exposing metrics.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: gatekeeper
+  namespace: monitoring
+  labels:
+    # Must match kube-prometheus-stack's podMonitorSelector — defaults to
+    # `release: <helm-release-name>`. The release name comes from
+    # manifests/prometheus-helm.yaml (HelmChart `name: prometheus`).
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames: [gatekeeper-system]
+  selector:
+    matchLabels:
+      app: gatekeeper
+  podMetricsEndpoints:
+    - port: 8888
+      path: /metrics
+      interval: 30s
+---        
+# Grafana dashboard for Gatekeeper / OPA — auto-loaded by the dashboard sidecar.
+# The `grafana_dashboard: "1"` label is what the sidecar watches for.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gatekeeper-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: "Policy"
+data:
+  gatekeeper.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "graphTooltip": 1,
+      "links": [],
+      "refresh": "30s",
+      "schemaVersion": 38,
+      "tags": ["gatekeeper", "opa", "policy"],
+      "templating": {"list": []},
+      "time": {"from": "now-1h", "to": "now"},
+      "timepicker": {},
+      "timezone": "",
+      "title": "Gatekeeper / OPA",
+      "uid": "gatekeeper-overview",
+      "version": 1,
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "Active Violations",
+          "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+          "datasource": {"type": "prometheus", "uid": "prom"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "thresholds": {"mode": "absolute", "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 1},
+                {"color": "red", "value": 10}
+              ]}
+            }
+          },
+          "options": {
+            "reduceOptions": {"calcs": ["lastNotNull"]},
+            "colorMode": "background",
+            "graphMode": "none"
+          },
+          "targets": [
+            {"expr": "sum(gatekeeper_violations)", "refId": "A"}
+          ]
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Active Constraints",
+          "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+          "datasource": {"type": "prometheus", "uid": "prom"},
+          "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "graphMode": "none"},
+          "targets": [
+            {"expr": "sum(gatekeeper_constraints{status=\"active\"})", "refId": "A"}
+          ]
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "Constraint Templates",
+          "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
+          "datasource": {"type": "prometheus", "uid": "prom"},
+          "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "graphMode": "none"},
+          "targets": [
+            {"expr": "sum(gatekeeper_constraint_templates{status=\"active\"})", "refId": "A"}
+          ]
+        },
+        {
+          "id": 4,
+          "type": "stat",
+          "title": "Last Audit Run Age",
+          "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
+          "datasource": {"type": "prometheus", "uid": "prom"},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "color": {"mode": "thresholds"},
+              "thresholds": {"mode": "absolute", "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 120},
+                {"color": "red", "value": 300}
+              ]}
+            }
+          },
+          "options": {
+            "reduceOptions": {"calcs": ["lastNotNull"]},
+            "colorMode": "background",
+            "graphMode": "none"
+          },
+          "targets": [
+            {"expr": "time() - gatekeeper_audit_last_run_time", "refId": "A"}
+          ]
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "Violations by Enforcement Action",
+          "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
+          "datasource": {"type": "prometheus", "uid": "prom"},
+          "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 2}}},
+          "targets": [
+            {
+              "expr": "sum by (enforcement_action) (gatekeeper_violations)",
+              "legendFormat": "{{enforcement_action}}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "table",
+          "title": "Violations by Constraint",
+          "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
+          "datasource": {"type": "prometheus", "uid": "prom"},
+          "targets": [
+            {
+              "expr": "sum by (constraint_kind, constraint_name, enforcement_action) (gatekeeper_violations)",
+              "format": "table",
+              "instant": true,
+              "refId": "A"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {"Time": true, "__name__": true},
+                "renameByName": {
+                  "constraint_kind": "Kind",
+                  "constraint_name": "Name",
+                  "enforcement_action": "Action",
+                  "Value": "Violations"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "Admission Requests Rate",
+          "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
+          "datasource": {"type": "prometheus", "uid": "prom"},
+          "fieldConfig": {"defaults": {"unit": "reqps"}},
+          "targets": [
+            {
+              "expr": "sum by (admission_status) (rate(gatekeeper_validation_request_count[5m]))",
+              "legendFormat": "{{admission_status}}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "Admission Webhook Latency (p95 / p99)",
+          "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
+          "datasource": {"type": "prometheus", "uid": "prom"},
+          "fieldConfig": {"defaults": {"unit": "s"}},
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(gatekeeper_validation_request_duration_seconds_bucket[5m])))",
+              "legendFormat": "p95",
+              "refId": "A"
+            },
+            {
+              "expr": "histogram_quantile(0.99, sum by (le) (rate(gatekeeper_validation_request_duration_seconds_bucket[5m])))",
+              "legendFormat": "p99",
+              "refId": "B"
+            }
+          ]
+        }
+      ]
+    }

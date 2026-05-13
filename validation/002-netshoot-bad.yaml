@@ -1,9 +1,13 @@
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
     app: netshoot
+  annotations:
+    my.bad.policy-testing: mytest:value-bad
   name: netshoot
+  namespace: netshoot
 spec:
   replicas: 1
   selector:

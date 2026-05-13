@@ -138,6 +138,19 @@ spec:
     metrics:
       enabled: true
 
+    # Auto-discover dashboards from ConfigMaps labeled `grafana_dashboard: "1"`
+    # in any namespace. Drop a ConfigMap with the dashboard JSON under
+    # data.<file>.json and it will appear in Grafana automatically.
+    sidecar:
+      dashboards:
+        enabled: true
+        label: grafana_dashboard
+        labelValue: "1"
+        searchNamespace: ALL
+        folderAnnotation: grafana_folder
+        provider:
+          foldersFromFilesStructure: true
+
     # grafana.ini:
     #   auth:
     #     disable_login: true

@@ -1,9 +1,15 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: netshoot
+  labels:
+    name: netshoot  
+---
 # ConstraintTemplate: requires a specific annotation key to exist with an exact value.
 #
 # Two failure conditions:
 #   1. The annotation key is missing.
 #   2. The annotation key is present but its value does not match `annotationValue`.
----
 apiVersion: templates.gatekeeper.sh/v1
 kind: ConstraintTemplate
 metadata:
@@ -49,10 +55,13 @@ kind: K8sRequiredAnnotationValue
 metadata:
   name: require-policy-testing-annotation
 spec:
+  # `dryrun` = audit-only: violations are recorded in status but admission is not blocked.
+  # Switch to `deny` to enforce, or `warn` to admit with a warning message.
+  enforcementAction: dryrun
   match:
     kinds:
-      - apiGroups: [""]
-        kinds: ["Pod"]
+      - apiGroups: ["apps"]
+        kinds: ["Deployment"]
     # Exclude system / infrastructure namespaces so the cluster can bootstrap.
     excludedNamespaces:
       - kube-system
@@ -60,7 +69,6 @@ spec:
       - kube-node-lease
       - gatekeeper-system
       - monitoring
-      - default
   parameters:
     annotationKey: "my.test.policy-testing"
     annotationValue: "mytest:value"
