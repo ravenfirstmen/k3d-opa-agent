@@ -8,8 +8,8 @@ Files in this folder are **not** auto-applied (unlike `manifests/`). Apply them 
 
 | File | Purpose |
 |---|---|
-| `policy-required-annotation.yaml` | Requires the annotation `my.test.policy-testing=mytest:value` on `Deployment`s. Bundles a test `netshoot` namespace. |
-| `netshoot-bad.yaml` | A `Deployment` **without** the required annotation — used to trigger a violation. |
+| `001-policy-required-annotation.yaml` | Requires the annotation `my.test.policy-testing=mytest:value` on `Deployment`s. Bundles a test `netshoot` namespace. |
+| `002-netshoot-bad.yaml` | A `Deployment` **without** the required annotation — used to trigger a violation. |
 
 ## Prerequisites
 
@@ -23,16 +23,16 @@ kubectl wait --for=condition=available --timeout=120s \
 ## Apply / Tear Down
 
 ```bash
-kubectl apply -f validation/policy-required-annotation.yaml
+kubectl apply -f validation/001-policy-required-annotation.yaml
 kubectl wait --for=condition=established \
   crd/k8srequiredannotationvalue.constraints.gatekeeper.sh
 
 # Trigger a violation
-kubectl apply -f validation/netshoot-bad.yaml
+kubectl apply -f validation/002-netshoot-bad.yaml
 
 # Clean up
-kubectl delete -f validation/netshoot-bad.yaml
-kubectl delete -f validation/policy-required-annotation.yaml
+kubectl delete -f validation/002-netshoot-bad.yaml
+kubectl delete -f validation/001-policy-required-annotation.yaml
 ```
 
 ## Enforcement Modes
