@@ -1,1 +1,4 @@
 **/.volume
+terraform_fixtures/*.json
+**/.terraform*
+**/*.tfplan

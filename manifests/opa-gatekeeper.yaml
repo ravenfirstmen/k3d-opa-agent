@@ -30,7 +30,7 @@ spec:
     matchLabels:
       app: gatekeeper
   podMetricsEndpoints:
-    - port: 8888
+    - port: metrics
       path: /metrics
       interval: 30s
 ---        

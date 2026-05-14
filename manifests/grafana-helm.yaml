@@ -38,6 +38,8 @@ spec:
       service:
         port: 3100
         type: LoadBalancer
+      nginxConfig:
+        enableIPv6: false        
       ingress:
         enabled: true
         ingressClassName: "traefik"

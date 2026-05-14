@@ -57,7 +57,7 @@ metadata:
 spec:
   # `dryrun` = audit-only: violations are recorded in status but admission is not blocked.
   # Switch to `deny` to enforce, or `warn` to admit with a warning message.
-  enforcementAction: dryrun
+  enforcementAction: deny
   match:
     kinds:
       - apiGroups: ["apps"]
